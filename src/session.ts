@@ -1,4 +1,14 @@
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'fs';
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
@@ -11,11 +21,11 @@ function configDir(): string {
 }
 
 function sessionFile(): string {
-  return join(configDir(), 'session.json');
+  return process.env.WINDY_SESSION_FILE ?? join(configDir(), 'session.json');
 }
 
 function loginHistoryFile(): string {
-  return join(configDir(), 'login-history.json');
+  return process.env.WINDY_LOGIN_HISTORY_FILE ?? join(configDir(), 'login-history.json');
 }
 
 const LOGIN_HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -47,17 +57,49 @@ export function decodeJWT(token: string): WindyJWT {
   return JSON.parse(payload) as WindyJWT;
 }
 
+function assertPrivateRegularFile(path: string): void {
+  const st = lstatSync(path);
+  const uid = process.getuid?.();
+  if (!st.isFile() || st.nlink !== 1 || (uid !== undefined && st.uid !== uid)) {
+    throw new Error(`windy: refusing unsafe session file ${path}`);
+  }
+}
+
+function ensurePrivateDir(path: string): void {
+  mkdirSync(path, { recursive: true, mode: 0o700 });
+  chmodSync(path, 0o700);
+}
+
+function atomicWrite(path: string, value: string): void {
+  const dir = join(path, '..');
+  ensurePrivateDir(dir);
+  const temp = `${path}.tmp-${process.pid}-${randomUUID()}`;
+  const fd = openSync(temp, 'wx', 0o600);
+  try {
+    writeFileSync(fd, value, { encoding: 'utf8' });
+    chmodSync(temp, 0o600);
+    renameSync(temp, path);
+    chmodSync(path, 0o600);
+  } finally {
+    try { unlinkSync(temp); } catch { /* already renamed */ }
+  }
+}
+
 export function loadSession(): PersistedSession {
   if (existsSync(sessionFile())) {
+    assertPrivateRegularFile(sessionFile());
     const raw = readFileSync(sessionFile(), 'utf8');
-    return JSON.parse(raw) as PersistedSession;
+    const parsed = JSON.parse(raw) as PersistedSession;
+    if (!parsed || typeof parsed.uid !== 'string' || parsed.uid.length === 0) {
+      throw new Error(`windy: invalid session file ${sessionFile()}`);
+    }
+    return parsed;
   }
   return { uid: randomUUID() };
 }
 
 export function saveSession(s: PersistedSession): void {
-  mkdirSync(configDir(), { recursive: true });
-  writeFileSync(sessionFile(), JSON.stringify(s, null, 2), { mode: 0o600 });
+  atomicWrite(sessionFile(), JSON.stringify(s, null, 2));
 }
 
 export function sessionPath(): string {
@@ -97,18 +139,19 @@ interface LoginHistory {
 
 function loadLoginHistory(): LoginHistory {
   if (!existsSync(loginHistoryFile())) return { events: [] };
+  assertPrivateRegularFile(loginHistoryFile());
   try {
     const raw = readFileSync(loginHistoryFile(), 'utf8');
     const parsed = JSON.parse(raw) as LoginHistory;
     return { events: Array.isArray(parsed.events) ? parsed.events : [] };
-  } catch {
-    return { events: [] };
+  } catch (error) {
+    if (error instanceof SyntaxError) return { events: [] };
+    throw error;
   }
 }
 
 function saveLoginHistory(h: LoginHistory): void {
-  mkdirSync(configDir(), { recursive: true });
-  writeFileSync(loginHistoryFile(), JSON.stringify(h, null, 2), { mode: 0o600 });
+  atomicWrite(loginHistoryFile(), JSON.stringify(h, null, 2));
 }
 
 /**

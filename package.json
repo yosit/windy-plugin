@@ -1,19 +1,22 @@
 {
-  "name": "@yosit/windy-cli",
+  "name": "@yosit/windy",
   "version": "1.0.3",
-  "description": "CLI and Node.js client for the Windy API",
+  "description": "Windy API client and shared runtime for Runline and Dripline plugins",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "windy": "dist/cli.js"
+    "windy-install": "dist/install.mjs"
   },
   "files": [
     "dist/",
     "skills/",
+    "plugins/",
     "README.md"
   ],
   "scripts": {
     "build": "tsc",
+    "bundle": "pnpm build && node scripts/build-bundles.mjs",
+    "smoke": "node scripts/smoke.mjs",
     "prepare": "pnpm run build",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -35,13 +38,13 @@
     "registry": "https://npm.pkg.github.com"
   },
   "dependencies": {
-    "@toon-format/toon": "^2.1.0",
-    "commander": "^12.1.0",
     "https-proxy-agent": "^7.0.5"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
+    "esbuild": "^0.28.2",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vite": "^7.3.6",
+    "vitest": "^5.0.1"
   }
 }

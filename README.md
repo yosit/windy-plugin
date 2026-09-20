@@ -1,213 +1,87 @@
-# windy-cli
+# Windy
 
-A CLI, Node library, and two agent integrations for the [windy.com](https://www.windy.com) API — forecasts, search, geo, stations, alerts, storms, webcams, tides, and authenticated user data.
+Runline actions, Dripline SQL tables, and an agent skill for [windy.com](https://www.windy.com), backed by one shared TypeScript client. **No Windy weather CLI.**
 
-This repo ships **three** surfaces over the same underlying client:
+## Package and migration
 
-| Surface | Package | Path | Use it when… |
-|---------|---------|------|--------------|
-| **CLI + library** | `@yosit/windy-cli` | `src/` | You want the `windy` binary or to import `WindyClient` directly. |
-| **Runline plugin** | `@yosit/runline-plugin-windy` | [`plugins/runline/`](./plugins/runline/) | You're building [runline](https://github.com/Michaelliv/runline) agents and want `windy.*` actions in your scripts. |
-| **Dripline plugin** | `@yosit/dripline-plugin-windy` | [`plugins/dripline/`](./plugins/dripline/) | You want to query windy as SQL tables via [dripline](https://github.com/Michaelliv/dripline) / DuckDB. |
+The migration target is one package, `@yosit/windy`, with client, `runline`, and `dripline` entry points and `skills/windy/SKILL.md`. The repository name remains `yosit/windy-cli` for URL continuity. New package publishing is a separate release step.
 
-All three reuse the same `WindyClient`, so authentication, JWT refresh, and endpoint coverage stay in lock-step.
+Replace old `@yosit/windy-skill` or `@yosit/windy-cli` imports with `@yosit/windy`. The former `windy` and `windy-skill` commands are removed. Existing login/refresh cron jobs must be replaced with host connection credentials and automatic session refresh. Do not copy JWTs into shell history.
 
-## Install
+See [migration status and capability boundaries](kb/migration.md). Historical changelog entries describe earlier releases, not the current API.
 
-### From git (works today)
+## Use through Runline
 
-```bash
-# global CLI
-npm  i -g github:yosit/windy-cli
-pnpm add -g github:yosit/windy-cli            # equivalent
-
-# pin a tag or commit
-npm  i -g github:yosit/windy-cli#v0.1.5
-pnpm add -g github:yosit/windy-cli#main
-```
-
-`prepare` runs `tsc` automatically on install, so the `windy` binary is built and on your `$PATH` afterward.
-
-As a library in a project:
-
-```bash
-pnpm add github:yosit/windy-cli
-# then: import { WindyClient } from '@yosit/windy-cli'
-```
-
-### From npm (once published)
-
-```bash
-npm i -g @yosit/windy-cli
-```
-
-### From source
-
-```bash
-git clone https://github.com/yosit/windy-cli.git && cd windy-cli
-pnpm install
-pnpm build
-node dist/cli.js point 32.0853,34.7818 --model ecmwf
-```
-
-## Quick start (CLI)
-
-```bash
-# Anonymous works for most endpoints
-windy point 32.0853,34.7818 --model ecmwf
-windy storms list
-windy stations near 48.85,2.35
-
-# Auth via JWT or _account_sid cookie (see "Auth" below)
-WINDY_TOKEN='eyJ...' windy whoami
-```
-
-Output is JSON by default; pass `--format toon` for compact [toon](https://github.com/toon-format/toon) output.
-
-### Common command groups
-
-`windy <group> <sub>`:
-
-- `point`, `now`, `meteogram`, `sounding`, `airq` — point forecasts
-- `models`, `manifest`, `overlays`, `levels`, `basemaps`, `languages` — metadata
-- `search`, `reverse`, `elevation`, `timezone` — geo / search
-- `stations near|station|observations` — weather stations + history
-- `poi at|near` — air-quality / tide POIs
-- `webcams near|detail|archive|search` — webcams
-- `alerts cap|live` — severe-weather alerts
-- `storms list|count` — tropical cyclones
-- `tides <lat,lon>`, `tides poi <id>` — tide forecasts
-- `favourites`, `user alerts` — authenticated user data
-- `login`, `refresh`, `whoami`, `session`, `logout` — auth
-
-Run `windy --help` (or `windy <group> --help`) for the full list.
-
-## Library use
-
-```ts
-import { WindyClient } from '@yosit/windy-cli';
-
-const c = WindyClient.fromEnv();             // reads WINDY_TOKEN / WINDY_ACCOUNT_SID / WINDY_UID
-const f = await c.pointForecast(32.0853, 34.7818, { model: 'ecmwf' });
-console.log(f.data.temp[0] - 273.15, '°C now');
-```
-
-`WindyClient.fromEnv()` layers env vars on top of the persisted session at `~/.config/windy-cli/session.json` (mode 600). Pass `{ ephemeral: true, session: { token } }` to skip disk persistence — handy for plugins and short-lived agents.
-
-## Auth
-
-windy.com uses OAuth (Google / Facebook / Apple / email); there is no programmatic username/password endpoint. Two paths:
-
-| Method | Env var | How to obtain | Lifetime |
-|--------|---------|---------------|----------|
-| Pre-issued JWT | `WINDY_TOKEN` | DevTools → Network → `account.windy.com/api/info` → copy `token2=…` from the URL | ~48 h |
-| Cookie | `WINDY_ACCOUNT_SID` | DevTools → Application → Cookies → `_account_sid` | Long-lived; bootstraps a JWT on demand |
-
-Most public endpoints (forecasts, search, geo, stations, alerts, storms, webcams, tides) work **anonymously** — no token needed. Auth unlocks: `whoami`, favourites, user alerts, live alerts, webcam archive, and premium-gated forecast refresh rates.
-
-See [`skill.md`](./skill.md) for the full auth walkthrough.
-
-## Runline plugin
-
-Exposes the windy API as actions for agent scripts. Install into a runline workspace by URL:
-
-```bash
-runline plugin install git+https://github.com/yosit/windy-cli.git#path=plugins/runline
-runline connection add windy \
-  --config token=$WINDY_TOKEN \
-  --config accountSid=$WINDY_ACCOUNT_SID
-```
+After loading the Runline adapter and configuring a Windy connection:
 
 ```javascript
-// inside a runline agent script
-const here     = await windy.geo.reverse({ lat: 32.0853, lon: 34.7818 });
-const forecast = await windy.forecast.point({ lat: 32.0853, lon: 34.7818, model: 'ecmwf', setup: 'summary' });
-const storms   = await windy.storms.list({});
+const forecast = await windy.forecast.point({
+  lat: 32.0853, lon: 34.7818, model: 'ecmwf', setup: 'summary'
+});
+return forecast;
 ```
 
-Full action list and connection schema: [`plugins/runline/README.md`](./plugins/runline/README.md).
+Discover actions and input schemas through the host before selecting parameters. Runline returns client responses, including nested data. Mutations require user authorization and must never be included in automated live checks.
 
-## Dripline plugin
+## Use through Dripline
 
-Exposes the windy API as **SQL tables** (31 of them) backed by DuckDB. Install into a dripline workspace:
-
-```bash
-dripline plugin install git+https://github.com/yosit/windy-cli.git#path=plugins/dripline
-dripline connection add windy \
-  --config token=$WINDY_TOKEN \
-  --config accountSid=$WINDY_ACCOUNT_SID
-```
+After loading the Dripline adapter:
 
 ```sql
--- 5-day forecast for Tel Aviv at 6-hourly cadence
-SELECT ts, temp_k - 273.15 AS temp_c, wind_ms, wind_dir_deg
-FROM windy.windy_forecast_point
-WHERE lat = 32.0853 AND lon = 34.7818 AND model = 'ecmwf' AND step = 6
-ORDER BY ts;
-
--- Active tropical storms ranked by intensity
-SELECT name, lat, lon, wind_speed_ms
-FROM windy.windy_storms
-ORDER BY wind_speed_ms DESC;
+SELECT ts, temp_k - 273.15 AS temp_c, wind_ms
+FROM windy_forecast_point
+WHERE lat = 32.0853 AND lon = 34.7818 AND model = 'ecmwf'
+ORDER BY ts
+LIMIT 12;
 ```
 
-Time-series endpoints (forecast, AQ, sounding, observations, tides) emit long-format rows, so they join naturally with SQL.
+Some hosts qualify tables with a connection name. Dripline is read-only and does not depend on Runline. Forecasts, soundings, observations and tides offer time-series rows; reference catalogs and metadata are also available.
 
-Full table catalog and column reference: [`plugins/dripline/README.md`](./plugins/dripline/README.md).
+## Credentials
 
-## Repo layout
+Windy uses browser OAuth. Configure credentials through the host connection manager:
 
-```
-src/
-  cli.ts          Commander program — every CLI subcommand
-  client.ts       WindyClient — one method per endpoint
-  session.ts      ~/.config/windy-cli/session.json persistence + JWT decode
-  types.ts        Response shapes + model/overlay/level catalogs
-  formatters.ts   json (default) + toon output
-  index.ts        Public library exports
-plugins/runline/   Runline plugin — windy.* actions
-plugins/dripline/  Dripline plugin — windy_* SQL tables
-kb/
-  windy-api-architecture.md   Endpoints, auth, entity shapes, datetime conventions
-  windy-api-intent.md         Per-endpoint Screen / Intent / Trigger
-  windy-data-strategy.md      Caching notes
-skills/           Claude Code skill bundles
-tests/            vitest specs
-skill.md          Skill front-matter + auth walkthrough
+| Connection field | Optional environment mapping | Purpose |
+| --- | --- | --- |
+| `accountSid` | `WINDY_ACCOUNT_SID` | Authorized browser's `_account_sid` cookie; durable JWT refresh credential |
+| `token` | `WINDY_TOKEN` | Pre-issued JWT; approximately 48 hours, cannot refresh without cookie |
+| `proxy` | `WINDY_PROXY` | Explicit debugging proxy; ambient `HTTPS_PROXY` is ignored |
+
+Public weather endpoints can be called anonymously; account operations require credentials. The separate commercial forecast API requires its own API key. Never log secrets. The legacy library session path remains `~/.config/windy-cli/session.json` for compatibility; do not confuse that with plugin connection storage.
+
+## Library
+
+```typescript
+import { WindyClient } from '@yosit/windy';
+
+const client = new WindyClient({ session: { uid: 'my-device-id' }, ephemeral: true });
+const forecast = await client.pointForecast(32.0853, 34.7818);
 ```
 
-## Units (wire format)
+`WindyClient.fromEnv()` supports the legacy library session plus explicit credential environment overrides. The adapters configure clients independently of the old CLI.
 
-Values are returned exactly as the windy API delivers them — consumers convert:
+## Units and completeness
 
-| Field | Unit |
-|-------|------|
-| Temperature | **Kelvin** |
-| Wind speed | m/s |
-| Wind direction | meteorological degrees (FROM direction) |
-| Precipitation | mm per timestep |
-| Pressure | hPa |
-| Distance | km |
-| Timestamps | unix ms UTC |
+Forecast temperature: Kelvin. Wind: m/s, meteorological FROM degrees. Precipitation: mm per timestep. Timestamps: generally unix milliseconds UTC. Observation units can differ; inspect field documentation.
+
+Search and nearby APIs are bounded responses, not bulk exports. Do not assume a server-sized response is exhaustive. Known gaps and unverified endpoint behavior are tracked in [the migration record](kb/migration.md).
 
 ## Development
 
 ```bash
 pnpm install
-pnpm build          # tsc → dist/
-pnpm test           # vitest
-pnpm test:watch
-pnpm lint           # tsc --noEmit
+pnpm build
+pnpm lint
+pnpm test
 ```
 
-Plugin builds (each in their own subdir):
+During migration the source adapters remain in `plugins/`. Build the root client before their individual TypeScript builds. Tests currently import the built client deliberately so prototype stubs target the same class as the adapters.
 
-```bash
-cd plugins/runline  && pnpm build
-cd plugins/dripline && pnpm build
-```
-
-Both plugins type-map `@yosit/windy-cli` to the parent's built `dist/`, so run `pnpm build` at the root first.
+- `src/`: client, session storage, types, reference catalogs
+- `plugins/`: independent adapter sources
+- `skills/windy/SKILL.md`: authoritative shipped skill
+- `kb/`: API evidence and migration status
+- `tests/`: isolated deterministic tests
 
 ## License
 

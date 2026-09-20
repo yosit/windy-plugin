@@ -1,115 +1,76 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This repository ships a shared Windy API client, Runline actions, a Dripline SQL adapter, and an agent skill. It does **not** ship a Windy weather CLI.
 
-## What This Is
+## Stack
 
-A CLI tool and Node.js client for the windy.com API, built as a Claude Code skill.
-The CLI lets Claude (and humans) interact with windy.com as if using the web app.
-
-## Tech Stack
-
-- **Runtime**: Node.js ≥16, TypeScript, pnpm
-- **CLI framework**: commander
-- **Output format**: JSON (default) + toon (`--format toon`, `@toon-format/toon`)
-- **Tests**: vitest
-- **Build**: `tsc`
+- Node.js >=16, TypeScript, pnpm
+- `https` for API transport
+- Vitest for tests
+- Runline and Dripline are optional host SDK peers of their adapters
 
 ## Commands
 
 ```bash
-pnpm install        # install deps
-pnpm build          # compile TypeScript → dist/
-pnpm test           # run all tests
-pnpm test:watch     # watch mode
-pnpm lint           # tsc --noEmit
+pnpm install
+pnpm build
+pnpm lint
+pnpm test
 ```
 
-## Credentials
+Build the root client before adapter packages because their TypeScript path maps target the root declarations:
 
-windy.com uses OAuth (Google/Facebook/Apple/email). There is no programmatic username/password endpoint, so the CLI authenticates by reusing a logged-in browser's `_account_sid` cookie OR by accepting a pre-issued JWT (`token2` query param value).
-
-**Public env vars** (the surface advertised in READMEs and plugin connection schemas):
-- `WINDY_ACCOUNT_SID` — value of the `_account_sid` HttpOnly cookie (the durable credential)
-- `WINDY_TOKEN` — pre-issued JWT, bypasses the cookie bootstrap (~48 h)
-- `WINDY_PROXY` — HTTPS proxy URL for debugging (mitmproxy / Charles / Burp). Opt-in by exact name — we deliberately do NOT honor `HTTPS_PROXY`.
-
-**Internal escape hatches** (read by the code but not advertised — for power users and tests):
-- `WINDY_UID` — override the device UUID
-- `WINDY_LANG`, `WINDY_COUNTRY` — locale overrides
-- `WINDY_HTTP_TIMEOUT` — HTTP timeout in ms (default 30000)
-
-Session persists at `~/.config/windy-cli/session.json` (mode 600). Anonymous mode (no auth) works for most public endpoints (forecasts, search, reverse, elevation, webcams, stations, air quality, storms, alerts, tides).
-
-## Windy API
-
-- **Website**: https://www.windy.com
-- **Account / auth**: `https://account.windy.com/api/info` — bootstraps JWT from `_account_sid` cookie
-- **Main API base**: `https://node.windy.com`
-- **Auth type**: HttpOnly cookie session → HS256 JWT, ~48 h lifetime, passed as `token2=` query or `Authorization: Bearer`
-- **Full spec**: `kb/windy-api-architecture.md`
-- **Intent doc**: `kb/windy-api-intent.md`
-
-## Project Structure
-
-```
-src/
-  cli.ts        # Commander program; ~30 subcommands grouped by resource
-  client.ts     # WindyClient — one method per endpoint; https only
-  session.ts    # ~/.config/windy-cli/session.json persistence + JWT decode
-  types.ts      # TypeScript interfaces for all response shapes
-  formatters.ts # json (default) + toon output
-  index.ts      # Public API exports
+```bash
+pnpm build
+pnpm --filter @yosit/runline-plugin-windy build
+pnpm --filter @yosit/dripline-plugin-windy build
 ```
 
-## Architecture
+## Package layout
 
-### Client class
+- `src/client.ts` — full Windy HTTP client
+- `src/session.ts` — credential-grade session persistence and refresh helpers
+- `src/catalog.ts` — local model/overlay/level/language reference data
+- `src/types.ts` — API entities and reference catalogs
+- `src/index.ts` — shared package exports
+- `plugins/runline/src/index.ts` — typed actions; can run without Dripline
+- `plugins/dripline/src/index.ts` — read-only SQL tables; can run without Runline
+- `skills/windy/SKILL.md` — authoritative agent skill
+- `kb/` — API evidence, intent, data strategy, and migration status
 
-`WindyClient.fromEnv()` reads env overrides (`WINDY_TOKEN`, `WINDY_ACCOUNT_SID`, `WINDY_UID`) layered on top of the persisted session at `~/.config/windy-cli/session.json`. All API calls are instance methods.
+## Authentication
 
-`ensureAuth()` runs only when a `_account_sid` cookie is set and the cached JWT expires within 60 s — it then calls `refreshAuth()` to mint a fresh JWT. If only a JWT was supplied without a cookie, `refreshAuth()` is skipped (we have no way to re-mint without the cookie).
+Windy uses OAuth in the browser, followed by an `_account_sid` cookie exchanged for an approximately 48-hour JWT at `account.windy.com/api/info`. The integration does not automate password login.
 
-`refreshAuth()` is careful to **only persist a fresh JWT when the `/api/info` response shows `auth: true`** — otherwise it would clobber the user-supplied authenticated token with an anonymous one.
+Connection fields exposed by both adapters:
 
-All requests go through `request()` which:
-1. Calls `ensureAuth()` (unless `auth: false` is passed).
-2. Sets the standard envelope (`token2`, `uid`, `v`, `poc`, `pr`, `sc`) on `node.windy.com` requests.
-3. Sets the `_account_sid` cookie if available, plus the bundle-fingerprint `accept` header.
-4. Decodes `content-encoding` (gzip / brotli / inflate / zstd if Node ≥ 22.15).
-5. Returns parsed JSON, or `null` for `204 No Content`, or the raw text for `options.raw`.
+- `accountSid` / `WINDY_ACCOUNT_SID` — durable browser cookie, supports JWT refresh
+- `token` / `WINDY_TOKEN` — pre-issued JWT, cannot be refreshed without the cookie
+- `proxy` / `WINDY_PROXY` — explicit debugging proxy; ambient `HTTPS_PROXY` is ignored
 
-Path obfuscation note: the SPA sometimes wraps forecast paths in base64 (`/Zm9yZWNhc3Q/ZWNtd2Y/cG9pbnQv...`), but the clean equivalent (`/forecast/point/ecmwf/v2.9/{lat}/{lon}?...`) returns identical JSON. The CLI uses the clean form.
+Most public forecasts, search, geo, station, alert, storm, webcam, and tide reads work anonymously. Account reads and mutations require authentication. Never log or commit cookies, JWTs, or API keys.
 
-### CLI pattern
+Sessions use `~/.config/windy-cli/session.json` for legacy library compatibility. Writes are atomic and credential-grade. `WINDY_SESSION_FILE` and `WINDY_LOGIN_HISTORY_FILE` are internal test escape hatches.
 
-`buildProgram()` in `cli.ts` returns the Commander program. Each command calls `withClient(c => c.someMethod(...))` and prints the result via `out()`. Global `--format`, `--lang`, `--country`, `--timeout` flags are set in the `preAction` hook.
+## Client behavior
 
-### Output
+`WindyClient` returns complete API payloads. It preserves Windy wire units: Kelvin temperature, m/s wind, meteorological FROM-direction degrees, mm per timestep, hPa pressure, and unix-ms UTC timestamps.
 
-- Default: `formatToon(data)` → compact tabular layout
-- `--format json`: `JSON.stringify(data, null, 2)`
-- Errors: `error: <msg>` on stderr, exit 1
+`ensureAuth()` only refreshes when a cookie-backed session is stale. Anonymous and token-only clients do not attempt an impossible cookie refresh. Each client may carry its own proxy; adapters include proxy in their connection cache key and never mutate global proxy environment state.
 
-## Knowledge Base
+## Plugin rules
 
-Windy API discoveries are documented in `kb/` (in-repo):
-- `windy-api-architecture.md` — endpoints, auth, entity shapes, datetime conventions
-- `windy-api-intent.md` — per-endpoint Screen / Intent / Trigger
-- `windy-data-strategy.md` — caching strategy (stub)
+- Dripline is independently installable and read-only.
+- Runline may expose mutations, but destructive or consequential actions require explicit confirmation.
+- Runline actions return complete client responses.
+- Dripline tables preserve complete nested/undocumented payloads in JSON columns where a normalized schema is not yet verified.
+- Do not claim a server-sized response is exhaustive without pagination evidence.
+- Live checks must be read-only and must not persist or print credentials.
 
-Update these before committing — they are the source of truth for the next session.
+## Knowledge base
 
-## Units (wire format)
+Update `kb/windy-api-architecture.md`, `kb/windy-api-intent.md`, `kb/windy-data-strategy.md`, and `kb/migration.md` when behavior or packaging changes. `skills/windy/SKILL.md` is the user-facing discovery contract.
 
-| Field | Unit |
-|-------|------|
-| Temperature | **Kelvin** |
-| Wind speed | m/s |
-| Wind direction | meteorological degrees (FROM direction) |
-| Precipitation | mm per timestep |
-| Pressure | hPa |
-| Distance | km |
-| Timestamps | unix ms (UTC) |
+## Verification gate
 
-The CLI returns values exactly as the API does — consumers convert.
+Before closing an issue, run root and adapter builds/lints plus `pnpm test`. Before release, also run packed-artifact and real-host smoke checks. A passing unit suite is not evidence of live API success.

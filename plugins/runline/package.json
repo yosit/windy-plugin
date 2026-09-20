@@ -24,7 +24,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@yosit/windy-cli": "workspace:*"
+    "@yosit/windy": "workspace:*"
   },
   "peerDependencies": {
     "runline": "*"

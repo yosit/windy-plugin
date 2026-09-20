@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 // Import from the built artifact so the prototype we stub is the SAME class
-// the plugins receive via `@yosit/windy-cli` (resolved through pnpm workspace
+// the plugins receive via `@yosit/windy` (resolved through pnpm workspace
 // to ./dist/index.js). Stubbing src/client.ts's WindyClient would have no
 // effect on the plugin code.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -83,6 +83,19 @@ function stubMethod<K extends keyof WindyClient>(
     restore: () => { proto[method as string] = original; },
   };
 }
+
+describe('plugin capability parity (#14)', () => {
+  it('registers the extended read-only action and table surfaces', () => {
+    const actions = mountRunline();
+    const { tables } = mountDripline();
+    expect(actions.has('radar.info')).toBe(true);
+    expect(actions.has('webcams.archive')).toBe(true);
+    expect(actions.has('account.settings')).toBe(true);
+    expect(tables.has('windy_radar_info')).toBe(true);
+    expect(tables.has('windy_satellite_archive')).toBe(true);
+    expect(tables.has('windy_account_settings')).toBe(true);
+  });
+});
 
 describe('runline plugin client cache (#7)', () => {
   const restores: Array<() => void> = [];

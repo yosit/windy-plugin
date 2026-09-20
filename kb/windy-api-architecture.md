@@ -873,7 +873,7 @@ Plugins live under `plugins/` (per the v0.3.0 scaffold convention):
 - `plugins/runline/` → `@yosit/runline-plugin-windy` — typed actions.
 - `plugins/dripline/` → `@yosit/dripline-plugin-windy` — SQL tables (31 of them).
 
-Both type-map `@yosit/windy-cli` to the parent's built `../../dist/index.d.ts`. Build the parent first (`pnpm build` at the repo root), then each plugin (`cd plugins/<name> && pnpm build`).
+Both type-map `@yosit/windy` to the parent's built `../../dist/index.d.ts`. Build the parent first (`pnpm build` at the repo root), then each plugin (`cd plugins/<name> && pnpm build`).
 
 ### Forecast tables — division of labor
 

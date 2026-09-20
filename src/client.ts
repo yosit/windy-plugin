@@ -6,26 +6,26 @@ import { createGunzip, createBrotliDecompress, createInflate } from 'zlib';
 // Lazily instantiate an HTTPS proxy agent when WINDY_PROXY is set. The env
 // var is opt-in by exact name — we don't honor the ambient HTTPS_PROXY,
 // since users frequently have one set for unrelated tools.
-let cachedProxyAgent: Agent | null | undefined;
-function getProxyAgent(): Agent | undefined {
-  if (cachedProxyAgent === undefined) {
-    const url = process.env.WINDY_PROXY?.trim();
+const proxyAgents = new Map<string, Agent | null>();
+function getProxyAgent(proxy?: string): Agent | undefined {
+  const url = (proxy ?? process.env.WINDY_PROXY)?.trim() ?? '';
+  if (!proxyAgents.has(url)) {
     if (url) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { HttpsProxyAgent } = require('https-proxy-agent') as {
           HttpsProxyAgent: new (u: string, o?: { keepAlive?: boolean }) => Agent;
         };
-        cachedProxyAgent = new HttpsProxyAgent(url, { keepAlive: true });
+        proxyAgents.set(url, new HttpsProxyAgent(url, { keepAlive: true }));
       } catch {
         // https-proxy-agent isn't installed — proxy support disabled.
-        cachedProxyAgent = null;
+        proxyAgents.set(url, null);
       }
     } else {
-      cachedProxyAgent = null;
+      proxyAgents.set(url, null);
     }
   }
-  return cachedProxyAgent ?? undefined;
+  return proxyAgents.get(url) ?? undefined;
 }
 import type {
   AccountInfo,
@@ -110,6 +110,8 @@ export interface ClientOptions {
   lang?: string;
   /** Don't persist updates to disk. */
   ephemeral?: boolean;
+  /** HTTPS proxy for this client only; avoids connection-wide env cross-talk. */
+  proxy?: string;
 }
 
 export class WindyClient {
@@ -117,6 +119,7 @@ export class WindyClient {
   private country: string;
   private lang: string;
   private ephemeral: boolean;
+  private proxy?: string;
   private pocCounter = 1;
   private refreshPromise: Promise<void> | null = null;
 
@@ -125,6 +128,7 @@ export class WindyClient {
     this.country = opts.country ?? 'xx';
     this.lang = opts.lang ?? 'en';
     this.ephemeral = opts.ephemeral ?? false;
+    this.proxy = opts.proxy;
   }
 
   /** Build a client from environment variables and/or the on-disk session. */
@@ -161,7 +165,7 @@ export class WindyClient {
     if (!this.session.accountSid) {
       throw new Error(
         'refresh requires the `_account_sid` cookie. Set WINDY_ACCOUNT_SID, ' +
-          'or run `windy login --cookie ...`. A bare JWT (WINDY_TOKEN) cannot be ' +
+          'or configure accountSid on the Windy connection. A bare JWT (WINDY_TOKEN) cannot be ' +
           'refreshed — it expires in ~48 h and must be replaced.',
       );
     }
@@ -1003,7 +1007,7 @@ export class WindyClient {
   private requireAuthed(op: string): void {
     if (!this.session.accountSid && !this.session.token) {
       throw new Error(
-        `${op} requires an authenticated session. Run \`windy login --cookie <_account_sid>\` first.`,
+        `${op} requires an authenticated session. Configure accountSid or token on the Windy connection.`,
       );
     }
   }
@@ -1015,10 +1019,8 @@ export class WindyClient {
   private async ensureAuth(): Promise<void> {
     // Only refresh when we have a means to refresh (account cookie) and the token is stale
     if (!tokenIsStale(this.session, 60)) return;
-    if (!this.session.accountSid && this.session.token) {
-      // Token given via env without cookie — can't refresh, hope it's still valid
-      return;
-    }
+    // Anonymous and token-only clients have no cookie from which to mint a JWT.
+    if (!this.session.accountSid) return;
     if (this.refreshPromise) return this.refreshPromise;
     this.refreshPromise = (async () => {
       try {
@@ -1102,7 +1104,7 @@ export class WindyClient {
           method,
           headers,
           timeout: Number(process.env.WINDY_HTTP_TIMEOUT ?? 30000),
-          agent: getProxyAgent(),
+          agent: getProxyAgent(this.proxy),
         },
         (res) => {
           // Capture rotated _account_sid if present

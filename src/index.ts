@@ -14,9 +14,5 @@ export {
   type KeepaliveOptions,
 } from './session';
 export * from './types';
-export {
-  formatToon,
-  OUTPUT_FORMAT_CHOICES,
-  DEFAULT_OUTPUT_FORMAT,
-  type OutputFormat,
-} from './formatters';
+export { referenceCatalog } from './catalog';
+export { PACKAGE_VERSION } from './version';

@@ -30,7 +30,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@yosit/windy-cli": "workspace:*"
+    "@yosit/windy": "workspace:*"
   },
   "peerDependencies": {
     "dripline": ">=0.3.0"

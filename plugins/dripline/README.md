@@ -4,7 +4,7 @@ A [dripline](https://github.com/Michaelliv/dripline) plugin that exposes the
 [windy.com](https://www.windy.com) API as SQL-queryable tables backed by
 DuckDB.
 
-Built on top of [`@yosit/windy-cli`](../../) — every table instantiates a
+Built on top of [`@yosit/windy`](../../) — every table instantiates a
 `WindyClient` per call using config from `ctx.connection.config`, so it
 stays in lock-step with the CLI's auth handling and endpoint coverage.
 
@@ -37,7 +37,7 @@ pnpm lint     # tsc --noEmit
 provides minimal types so this package type-checks before dripline is on
 the resolution path; the real types take over once it is.
 
-The TypeScript path mapping for `@yosit/windy-cli` points at
+The TypeScript path mapping for `@yosit/windy` points at
 `../../dist/index.d.ts`, so build the parent (`pnpm build` at the repo
 root) before building the plugin.
 

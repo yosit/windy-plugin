@@ -3,7 +3,7 @@
 A [runline](https://github.com/Michaelliv/runline) plugin that exposes the
 [windy.com](https://www.windy.com) API as callable actions for agent code.
 
-Built on top of [`@yosit/windy-cli`](../../) — the plugin instantiates a
+Built on top of [`@yosit/windy`](../../) — the plugin instantiates a
 `WindyClient` per call using config from `ctx.connection.config`, so it stays
 in lock-step with the CLI's auth handling and endpoint coverage.
 

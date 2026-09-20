@@ -10,6 +10,16 @@ describe('WindyClient', () => {
     expect(c.persistedSession.token).toBeUndefined();
   });
 
+  it('public reads do not try to refresh an anonymous session', async () => {
+    const c = new WindyClient({ session: { uid: 'anonymous-test' }, ephemeral: true });
+    const refresh = vi.spyOn(c, 'refreshAuth');
+    const transport = vi.spyOn(c as unknown as { rawRequest: () => Promise<unknown> }, 'rawRequest').mockResolvedValue(42);
+    await expect(c.elevation(1, 2)).resolves.toBe(42);
+    expect(refresh).not.toHaveBeenCalled();
+    transport.mockRestore();
+    refresh.mockRestore();
+  });
+
   it('decodeToken returns null when no token is stored', () => {
     const c = new WindyClient({ session: { uid: 'test-uid' }, ephemeral: true });
     expect(c.decodeToken()).toBeNull();

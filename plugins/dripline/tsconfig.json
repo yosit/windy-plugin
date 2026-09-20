@@ -14,7 +14,7 @@
     "declarationMap": true,
     "sourceMap": true,
     "paths": {
-      "@yosit/windy-cli": ["../../dist/index.d.ts"],
+      "@yosit/windy": ["../../dist/index.d.ts"],
       "dripline": ["./src/dripline-shim.d.ts"]
     },
     "baseUrl": "."

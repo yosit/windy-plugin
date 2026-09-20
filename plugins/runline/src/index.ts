@@ -1,7 +1,7 @@
 /**
  * `@yosit/runline-plugin-windy` — windy.com as typed agent actions.
  *
- * What this is: a runline plugin exposing the windy.com API as ~30 typed
+ * What this is: a runline plugin exposing the windy.com API as typed
  * actions an agent can call directly. Use when the user asks about
  * weather forecasts, marine, air quality, severe-weather alerts,
  * tropical storms, tides, METAR/airports, weather stations, or webcams.
@@ -23,6 +23,10 @@
  *   - `storms.list` — active tropical cyclones.
  *   - `alerts.cap` — public severe-weather alerts at a location.
  *
+ * Vex installation: this adapter is bundled as a standalone file at
+ * `.runline/plugins/windy/index.js`; it has no dependency on Dripline or local
+ * node_modules.
+ *
  * Units stay on the wire: temperature Kelvin, wind m/s, pressure hPa,
  * timestamps unix ms UTC. Consumers convert.
  */
@@ -31,9 +35,11 @@ import { randomUUID } from "crypto";
 import {
   WindyClient,
   WindyAPIError,
+  referenceCatalog,
+  PACKAGE_VERSION,
   type ClientOptions,
   type PersistedSession,
-} from "@yosit/windy-cli";
+} from "@yosit/windy";
 
 type Ctx = { connection: { config: Record<string, unknown> } };
 type Input = Record<string, unknown>;
@@ -61,14 +67,12 @@ function getClient(ctx: Ctx): WindyClient {
   const cfg = ctx.connection.config;
   const token = str(cfg.token);
   const accountSid = str(cfg.accountSid);
-  // Propagate proxy URL to env so the client's lazy proxy-agent picks it up.
   const proxy = str(cfg.proxy);
-  if (proxy && !process.env.WINDY_PROXY) process.env.WINDY_PROXY = proxy;
 
   const uid = str(cfg.uid) ?? (autoUid ??= randomUUID());
   const country = str(cfg.country);
   const lang = str(cfg.lang);
-  const key = JSON.stringify({ token, accountSid, uid, country, lang });
+  const key = JSON.stringify({ token, accountSid, uid, country, lang, proxy });
 
   const cached = clientCache.get(key);
   if (cached) return cached;
@@ -80,6 +84,7 @@ function getClient(ctx: Ctx): WindyClient {
   const opts: ClientOptions = {
     session,
     ephemeral: true,
+    proxy,
     country,
     lang,
   };
@@ -101,7 +106,7 @@ async function run<T>(fn: () => Promise<T>): Promise<T> {
 
 export default function windy(rl: RunlinePluginAPI) {
   rl.setName("windy");
-  rl.setVersion("0.1.0");
+  rl.setVersion(PACKAGE_VERSION);
 
   rl.setConnectionSchema({
     token: {
@@ -144,6 +149,23 @@ export default function windy(rl: RunlinePluginAPI) {
       description: "HTTPS proxy URL for debugging (e.g. `http://localhost:8080`). Routes all outbound traffic through the proxy.",
       env: "WINDY_PROXY",
     },
+  });
+
+  for (const [name, value] of Object.entries(referenceCatalog)) {
+    rl.registerAction(`reference.${name}`, {
+      description: `Discover Windy ${name} before choosing forecast or map parameters. Returns the local reference catalog; no authentication or network required.`,
+      inputSchema: {},
+      async execute() { return value; },
+    });
+  }
+
+  rl.registerAction("stations.poiDetail", {
+    description: "Read complete POI metadata using a type and id discovered from nearby stations or webcams.",
+    inputSchema: {
+      type: { type: "string", required: true, description: "POI category, e.g. stations, airq, tides, webcams." },
+      id: { type: "string", required: true, description: "Full POI identifier, e.g. ad-LLBG." },
+    },
+    async execute(input: Input, ctx: Ctx) { return getClient(ctx).poiDetail(String(input.type), String(input.id)); },
   });
 
   // ── Forecast ────────────────────────────────────────────────────────────
@@ -290,7 +312,7 @@ export default function windy(rl: RunlinePluginAPI) {
       model: {
         type: "string",
         required: false,
-        description: "Model identifier (manifest run id). Defaults to `ecmwf-hres`. Accepts the user-facing alias `ecmwf` and maps it to `ecmwf-hres`. Other examples: `gfs`, `icon-global`, `hrrr-conus`, `arome-france`. See MODEL_CATALOG in @yosit/windy-cli types for the full list.",
+        description: "Model identifier (manifest run id). Defaults to `ecmwf-hres`. Accepts the user-facing alias `ecmwf` and maps it to `ecmwf-hres`. Other examples: `gfs`, `icon-global`, `hrrr-conus`, `arome-france`. See MODEL_CATALOG in @yosit/windy types for the full list.",
         default: "ecmwf-hres",
       },
       premium: { type: "boolean", required: false, description: "If true, request premium-tier reftimes (faster refresh cadence). Default true. Pass false to see only free-tier runs.", default: true },
@@ -742,5 +764,156 @@ export default function windy(rl: RunlinePluginAPI) {
       const c = getClient(ctx);
       return run(() => c.deleteUserAlert(String(input.id)));
     },
+  });
+
+  // Read-only client capabilities that do not map to the core weather tables.
+  // They remain actions so callers receive the complete upstream response.
+  rl.registerAction("webcams.archive", {
+    description: "List archived frames for one webcam. Use after `webcams.near` or `webcams.detail` when historical imagery is needed; returns the complete archive response.",
+    inputSchema: {
+      id: { type: "string", required: true, description: "Windy webcam id from `webcams.near` or `webcams.search`." },
+      imageSize: { type: "string", required: false, description: "Optional image variant requested by the archive endpoint." },
+      archiveType: { type: "string", required: false, description: "Optional archive category accepted by Windy." },
+    },
+    async execute(input: Input, ctx: Ctx) { return run(() => getClient(ctx).webcamArchive(String(input.id), { imageSize: str(input.imageSize), archiveType: str(input.archiveType) })); },
+  });
+  rl.registerAction("webcams.hourlyArchive", {
+    description: "Retrieve hourly archived imagery metadata for one webcam when a time-series archive is needed.",
+    inputSchema: { id: { type: "string", required: true, description: "Windy webcam id." } },
+    async execute(input: Input, ctx: Ctx) { return run(() => getClient(ctx).webcamHourlyArchive(String(input.id))); },
+  });
+  rl.registerAction("webcams.ping", {
+    description: "Check the health and freshness of one webcam owned or monitored by Windy.",
+    inputSchema: { id: { type: "string", required: true, description: "Windy webcam id." } },
+    async execute(input: Input, ctx: Ctx) { return run(() => getClient(ctx).webcamPing(String(input.id))); },
+  });
+  rl.registerAction("radar.info", {
+    description: "Get current radar composite metadata, including available frames and render configuration.",
+    inputSchema: {},
+    async execute(_input: Input, ctx: Ctx) { return run(() => getClient(ctx).radarInfo()); },
+  });
+  rl.registerAction("radar.coverage", {
+    description: "Get the geographic coverage of Windy's radar composite for deciding whether radar data exists at a location.",
+    inputSchema: {},
+    async execute(_input: Input, ctx: Ctx) { return run(() => getClient(ctx).radarCoverage()); },
+  });
+  rl.registerAction("radar.archive", {
+    description: "Get the available historical radar composite frame range for replay or time-window analysis.",
+    inputSchema: {},
+    async execute(_input: Input, ctx: Ctx) { return run(() => getClient(ctx).radarArchive()); },
+  });
+  rl.registerAction("satellite.info", {
+    description: "Get current satellite composite metadata and available imagery frames.",
+    inputSchema: {},
+    async execute(_input: Input, ctx: Ctx) { return run(() => getClient(ctx).satelliteInfo()); },
+  });
+  rl.registerAction("satellite.archive", {
+    description: "Get the available historical satellite composite frame range for replay or comparison.",
+    inputSchema: {},
+    async execute(_input: Input, ctx: Ctx) { return run(() => getClient(ctx).satelliteArchive()); },
+  });
+  rl.registerAction("geo.citytile", {
+    description: "Fetch forecast city-overlay data for a map tile when a map viewport needs named-city weather values.",
+    inputSchema: {
+      model: { type: "string", required: true, description: "Windy forecast model identifier, such as `ecmwf-hres` or `gfs`." },
+      z: { type: "number", required: true, description: "Map tile zoom." },
+      x: { type: "number", required: true, description: "Map tile X coordinate." },
+      y: { type: "number", required: true, description: "Map tile Y coordinate." },
+      refTime: { type: "string", required: false, description: "Optional ISO-8601 model run timestamp." },
+      step: { type: "number", required: false, description: "Optional forecast sample interval in hours." },
+      hours: { type: "number", required: false, description: "Optional forecast horizon in hours." },
+      labelsVersion: { type: "string", required: false, description: "Optional Windy labels version." },
+    },
+    async execute(input: Input, ctx: Ctx) { return run(() => getClient(ctx).citytile(String(input.model), num(input.z)!, num(input.x)!, num(input.y)!, { refTime: str(input.refTime), step: num(input.step), hours: num(input.hours), labelsVersion: str(input.labelsVersion) })); },
+  });
+  rl.registerAction("account.settings", {
+    description: "Read the signed-in user's Windy display and location settings; requires authentication and returns the complete settings object.",
+    inputSchema: {},
+    async execute(_input: Input, ctx: Ctx) { return run(() => getClient(ctx).userSettings()); },
+  });
+  rl.registerAction("account.colors", {
+    description: "Read the signed-in user's custom color palettes; requires authentication.",
+    inputSchema: {},
+    async execute(_input: Input, ctx: Ctx) { return run(() => getClient(ctx).userColors()); },
+  });
+  rl.registerAction("account.plugins", {
+    description: "Read the signed-in user's installed Windy plugins; requires authentication.",
+    inputSchema: {},
+    async execute(_input: Input, ctx: Ctx) { return run(() => getClient(ctx).userPlugins()); },
+  });
+  rl.registerAction("account.device", {
+    description: "Read the signed-in user's registered device state; requires authentication.",
+    inputSchema: {},
+    async execute(_input: Input, ctx: Ctx) { return run(() => getClient(ctx).userDevice()); },
+  });
+  rl.registerAction("account.myWebcams", {
+    description: "List webcams owned by the signed-in user; requires authentication and webcam-owner access.",
+    inputSchema: {},
+    async execute(_input: Input, ctx: Ctx) { return run(() => getClient(ctx).myWebcams()); },
+  });
+  rl.registerAction("webcams.add", {
+    description: "Register a webcam owned by the signed-in user. Requires authentication; use only after explicit user confirmation.",
+    inputSchema: { payload: { type: "object", required: true, description: "Complete webcam payload including title, lat, lon, and imageUrl." } },
+    async execute(input: Input, ctx: Ctx) { return run(() => getClient(ctx).addWebcam(input.payload as Parameters<WindyClient["addWebcam"]>[0])); },
+  });
+  rl.registerAction("webcams.update", {
+    description: "Update an owned webcam. Requires authentication; use only after explicit user confirmation.",
+    inputSchema: { id: { type: "string", required: true, description: "Owned webcam id." }, patch: { type: "object", required: true, description: "Fields to update." } },
+    async execute(input: Input, ctx: Ctx) { return run(() => getClient(ctx).updateWebcam(String(input.id), input.patch as Record<string, unknown>)); },
+  });
+  rl.registerAction("webcams.remove", {
+    description: "Delete an owned webcam permanently. Requires authentication and explicit confirmation.",
+    inputSchema: { id: { type: "string", required: true, description: "Owned webcam id to delete." }, confirm: { type: "boolean", required: true, description: "Must be true after the user confirms permanent deletion." } },
+    async execute(input: Input, ctx: Ctx) { if (input.confirm !== true) throw new Error("windy: webcam deletion requires confirm=true"); return run(() => getClient(ctx).removeWebcam(String(input.id))); },
+  });
+  rl.registerAction("push.register", {
+    description: "Register or refresh a push-notification device for the signed-in user; requires authentication.",
+    inputSchema: { token: { type: "string", required: true, description: "FCM or APNs device token." }, platform: { type: "string", required: false, description: "Push platform: web, ios, or android. Defaults to web." } },
+    async execute(input: Input, ctx: Ctx) { const p = str(input.platform); return run(() => getClient(ctx).registerPushDevice(String(input.token), p === "ios" || p === "android" ? p : "web")); },
+  });
+  rl.registerAction("push.unregister", {
+    description: "Unregister the current push-notification device for the signed-in user; requires authentication.",
+    inputSchema: {},
+    async execute(_input: Input, ctx: Ctx) { return run(() => getClient(ctx).unregisterPushDevice()); },
+  });
+  rl.registerAction("maps.widgetImageUrl", {
+    description: "Build a deterministic radar or satellite widget image URL without making an API request.",
+    inputSchema: { type: { type: "string", required: true, description: "Image type: radar or satellite." }, lat: { type: "number", required: true, description: "Latitude." }, lon: { type: "number", required: true, description: "Longitude." }, width: { type: "number", required: false, description: "Image width in pixels." }, height: { type: "number", required: false, description: "Image height in pixels." } },
+    async execute(input: Input, ctx: Ctx) { const t = str(input.type) === "satellite" ? "satellite" : "radar"; return getClient(ctx).widgetImageUrl(t, num(input.lat)!, num(input.lon)!, { w: num(input.width), h: num(input.height) }); },
+  });
+  rl.registerAction("maps.staticUrl", {
+    description: "Build a deterministic Windy static-map image URL without making an API request.",
+    inputSchema: { lat: { type: "number", required: true, description: "Latitude." }, lon: { type: "number", required: true, description: "Longitude." }, zoom: { type: "number", required: false, description: "Map zoom." }, size: { type: "number", required: false, description: "Image size in pixels." } },
+    async execute(input: Input, ctx: Ctx) { return getClient(ctx).staticMapUrl({ lat: num(input.lat)!, lon: num(input.lon)!, zoom: num(input.zoom), size: num(input.size) }); },
+  });
+  rl.registerAction("maps.dataTileUrl", {
+    description: "Build a deterministic forecast data-tile URL from a model run, forecast hour, overlay, and tile coordinates.",
+    inputSchema: { model: { type: "string", required: true, description: "Forecast model id." }, run: { type: "string", required: true, description: "Model run timestamp YYYYMMDDHH." }, forecastHour: { type: "string", required: true, description: "Forecast timestamp YYYYMMDDHH." }, overlay: { type: "string", required: true, description: "Windy overlay name." }, z: { type: "number", required: true, description: "Tile zoom." }, x: { type: "number", required: true, description: "Tile X." }, y: { type: "number", required: true, description: "Tile Y." }, ext: { type: "string", required: false, description: "jpg or png." } },
+    async execute(input: Input, ctx: Ctx) { return getClient(ctx).dataTileUrl(String(input.model), String(input.run), String(input.forecastHour), String(input.overlay), num(input.z)!, num(input.x)!, num(input.y)!, str(input.ext) === "png" ? "png" : "jpg"); },
+  });
+  rl.registerAction("maps.basemapTileUrl", {
+    description: "Build a deterministic Windy basemap tile URL.",
+    inputSchema: { style: { type: "string", required: true, description: "Windy basemap style." }, z: { type: "number", required: true, description: "Tile zoom." }, x: { type: "number", required: true, description: "Tile X." }, y: { type: "number", required: true, description: "Tile Y." } },
+    async execute(input: Input, ctx: Ctx) { return getClient(ctx).basemapTileUrl(String(input.style) as Parameters<WindyClient["basemapTileUrl"]>[0], num(input.z)!, num(input.x)!, num(input.y)!); },
+  });
+  rl.registerAction("maps.labelTileUrl", {
+    description: "Build a deterministic Windy place-label tile URL.",
+    inputSchema: { z: { type: "number", required: true, description: "Tile zoom." }, x: { type: "number", required: true, description: "Tile X." }, y: { type: "number", required: true, description: "Tile Y." }, lang: { type: "string", required: false, description: "Optional label language." } },
+    async execute(input: Input, ctx: Ctx) { return getClient(ctx).labelTileUrl(num(input.z)!, num(input.x)!, num(input.y)!, str(input.lang)); },
+  });
+  rl.registerAction("commercial.pointForecast", {
+    description: "Call Windy's separate commercial point-forecast API with an API key; use only when the user provides that credential.",
+    inputSchema: { apiKey: { type: "string", required: true, description: "Commercial Windy API key; do not log or persist it." }, options: { type: "object", required: true, description: "Complete point-forecast options including lat, lon, model, and parameters." } },
+    async execute(input: Input, ctx: Ctx) { return run(() => getClient(ctx).apiPointForecast(String(input.apiKey), input.options as Parameters<WindyClient["apiPointForecast"]>[1])); },
+  });
+  rl.registerAction("startup.article", {
+    description: "Read Windy's startup article content for an optional location.",
+    inputSchema: { lat: { type: "number", required: false, description: "Optional latitude." }, lon: { type: "number", required: false, description: "Optional longitude." } },
+    async execute(input: Input, ctx: Ctx) { return run(() => getClient(ctx).startupArticle({ lat: num(input.lat), lon: num(input.lon) })); },
+  });
+  rl.registerAction("startup.promo", {
+    description: "Read Windy's startup promotion content for an optional location or forced promotion id.",
+    inputSchema: { lat: { type: "number", required: false, description: "Optional latitude." }, lon: { type: "number", required: false, description: "Optional longitude." }, forceId: { type: "string", required: false, description: "Optional promotion id." } },
+    async execute(input: Input, ctx: Ctx) { return run(() => getClient(ctx).startupPromo({ lat: num(input.lat), lon: num(input.lon), forceId: str(input.forceId) })); },
   });
 }
