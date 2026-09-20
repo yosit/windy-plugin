@@ -17,7 +17,7 @@
     },
     "plugins/dripline": {
       "name": "@yosit/dripline-plugin-windy",
-      "version": "1.0.8",
+      "version": "1.0.9",
       "dependencies": {
         "@yosit/windy": "file:../..",
       },
@@ -34,7 +34,7 @@
     },
     "plugins/runline": {
       "name": "@yosit/runline-plugin-windy",
-      "version": "1.0.8",
+      "version": "1.0.9",
       "dependencies": {
         "@yosit/windy": "file:../..",
       },

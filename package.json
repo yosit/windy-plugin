@@ -1,6 +1,6 @@
 {
   "name": "@yosit/windy",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Windy API client and shared runtime for Runline and Dripline plugins",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
