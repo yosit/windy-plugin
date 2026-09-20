@@ -20,6 +20,19 @@ describe('WindyClient', () => {
     refresh.mockRestore();
   });
 
+  it('public reads do not bootstrap when an authenticated session is stale', async () => {
+    const c = new WindyClient({
+      session: { uid: 'authenticated-public-test', accountSid: 'sid', tokenExp: 1 },
+      ephemeral: true,
+    });
+    const refresh = vi.spyOn(c, 'refreshAuth');
+    const transport = vi.spyOn(c as unknown as { rawRequest: () => Promise<unknown> }, 'rawRequest').mockResolvedValue(42);
+    await expect(c.elevation(1, 2)).resolves.toBe(42);
+    expect(refresh).not.toHaveBeenCalled();
+    transport.mockRestore();
+    refresh.mockRestore();
+  });
+
   it('decodeToken returns null when no token is stored', () => {
     const c = new WindyClient({ session: { uid: 'test-uid' }, ephemeral: true });
     expect(c.decodeToken()).toBeNull();
@@ -30,6 +43,12 @@ describe('WindyClient', () => {
     await expect(c.favourites()).rejects.toThrow(/authenticated session/);
     await expect(c.userAlerts()).rejects.toThrow(/authenticated session/);
     await expect(c.userSettings()).rejects.toThrow(/authenticated session/);
+  });
+
+  it('coordinate validation never exposes a toFixed error', () => {
+    const c = new WindyClient({ session: { uid: 'invalid-coordinate-test' }, ephemeral: true });
+    expect(() => c.staticMapUrl({ lat: Number.NaN, lon: 2 })).toThrow(/invalid coordinate/);
+    expect(() => c.staticMapUrl({ lat: Number.NaN, lon: 2 })).not.toThrow(/toFixed/);
   });
 
   it('staticMapUrl produces a node-s.windy.com URL', () => {
@@ -79,6 +98,39 @@ describe('WindyClient', () => {
     vi.spyOn(c as unknown as { request: (p: string) => Promise<unknown> }, 'request')
       .mockRejectedValue(new WindyAPIError(500, 'HTTP 500', '{}'));
     await expect(c.nearbyTides(37.7442, 23.4283)).rejects.toThrow(/500/);
+  });
+
+  it('webcamSearch resolves a place and filters public nearby webcams', async () => {
+    const c = new WindyClient({ session: { uid: 'webcam-search-test' }, ephemeral: true });
+    vi.spyOn(c, 'search').mockResolvedValue({
+      header: { type: 'place' },
+      data: [{ id: 'place', lat: 56.642, lon: -4.88, title: 'Glencoe' }],
+    });
+    vi.spyOn(c, 'webcamsNear').mockResolvedValue({
+      total: 2,
+      cams: [
+        {
+          id: 1,
+          title: 'Glencoe Ski Centre',
+          lastUpdate: 0,
+          lastDaylight: 0,
+          location: { lat: 56.642, lon: -4.88, title: 'Glencoe', city: 'Glencoe', country: 'GB' },
+          images: { current: '', daylight: '' },
+        },
+        {
+          id: 2,
+          title: 'Unrelated camera',
+          lastUpdate: 0,
+          lastDaylight: 0,
+          location: { lat: 56.642, lon: -4.88, title: 'Fort William', city: 'Fort William', country: 'GB' },
+          images: { current: '', daylight: '' },
+        },
+      ],
+    });
+    await expect(c.webcamSearch('Glencoe')).resolves.toMatchObject({
+      total: 1,
+      cams: [{ id: 1 }],
+    });
   });
 
   it('widgetImageUrl encodes radar/satellite params', () => {

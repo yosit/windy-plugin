@@ -1,6 +1,6 @@
 {
   "name": "@yosit/windy",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Windy API client and shared runtime for Runline and Dripline plugins",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -13,13 +13,18 @@
     "plugins/",
     "README.md"
   ],
+  "workspaces": [
+    "./",
+    "plugins/*"
+  ],
   "scripts": {
     "build": "tsc",
-    "bundle": "pnpm build && node scripts/build-bundles.mjs",
+    "bundle": "bun run build && node scripts/build-bundles.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "prepare": "pnpm run build",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "prepare": "bun run build && bun run link-workspace",
+    "link-workspace": "node scripts/link-workspace.mjs",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
     "lint": "tsc --noEmit"
   },
   "keywords": [
@@ -30,7 +35,7 @@
   ],
   "author": "yosit",
   "license": "MIT",
-  "packageManager": "pnpm@10.28.0",
+  "packageManager": "bun@1.4.2",
   "engines": {
     "node": ">=16"
   },

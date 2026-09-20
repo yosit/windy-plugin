@@ -35,9 +35,9 @@ runline connection add windy \
 ## Local build (for development)
 
 ```bash
-pnpm install
-pnpm build    # tsc → dist/
-pnpm lint     # tsc --noEmit
+bun install
+bun run build    # tsc → dist/
+bun run lint     # tsc --noEmit
 ```
 
 The `runline` peer dep is satisfied by a local shim

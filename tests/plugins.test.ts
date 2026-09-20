@@ -1,10 +1,13 @@
 import { describe, it, expect, afterEach } from 'vitest';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 // Import from the built artifact so the prototype we stub is the SAME class
-// the plugins receive via `@yosit/windy` (resolved through pnpm workspace
+// the plugins receive via `@yosit/windy` (resolved through the Bun workspace
 // to ./dist/index.js). Stubbing src/client.ts's WindyClient would have no
 // effect on the plugin code.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { WindyClient } = require('../dist/index.js') as typeof import('../src/index');
+const { WindyClient, saveSession } = require('@yosit/windy') as typeof import('@yosit/windy');
 type WindyClient = InstanceType<typeof WindyClient>;
 import runlinePlugin from '../plugins/runline/src/index';
 import driplinePlugin from '../plugins/dripline/src/index';
@@ -117,6 +120,49 @@ describe('runline plugin client cache (#7)', () => {
 
     expect(s.instances.length).toBe(2);
     expect(s.instances[0]).toBe(s.instances[1]);
+  });
+
+  it('loads the persisted session instead of starting empty', async () => {
+    const originalConfig = process.env.XDG_CONFIG_HOME;
+    const configHome = mkdtempSync(join(tmpdir(), 'windy-plugin-session-'));
+    process.env.XDG_CONFIG_HOME = configHome;
+    try {
+      saveSession({ uid: 'persisted-uid', accountSid: 'sid-1', token: 'cached-token', tokenExp: 2_000_000_000 });
+      const s = stubMethod('pointForecast', async function (this: WindyClient) {
+        expect(this.persistedSession.token).toBe('cached-token');
+        return { header: { model: 'ecmwf', refTime: 't' }, data: { ts: [] } } as never;
+      });
+      restores.push(s.restore);
+      const actions = mountRunline();
+      await actions.get('forecast.point')!.execute(
+        { lat: 1, lon: 2 },
+        { connection: { config: { uid: 'persisted-uid', accountSid: 'sid-1' } } },
+      );
+    } finally {
+      if (originalConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = originalConfig;
+      rmSync(configHome, { recursive: true, force: true });
+    }
+  });
+
+  it('search.places reports missing bias coordinates clearly', async () => {
+    const actions = mountRunline();
+    const action = actions.get('search.places')!;
+    await expect(action.execute({ query: 'Fort William' }, { connection: { config: {} } }))
+      .rejects.toThrow('search.places: biasLat is required');
+    await expect(action.execute({ query: 'Fort William', latitude: 56.82, longitude: -5.11 }, { connection: { config: {} } }))
+      .rejects.toThrow('search.places: biasLat is required');
+  });
+
+  it('search.places accepts lat/lon as coordinate aliases', async () => {
+    const s = stubMethod('search', async (...args: unknown[]) => ({ data: [{ lat: args[1], lon: args[2] }] }) as never);
+    restores.push(s.restore);
+    const actions = mountRunline();
+    await actions.get('search.places')!.execute(
+      { query: 'Fort William', lat: 56.82, lon: -5.11 },
+      { connection: { config: { uid: 'search-aliases' } } },
+    );
+    expect(s.instances).toHaveLength(1);
   });
 
   it('creates a separate client when the connection config differs', async () => {
@@ -268,6 +314,26 @@ describe('dripline forecast tables normalize model casing (#9)', () => {
       ],
     }));
     expect(received).toEqual({ lat: 56.642, lon: -4.88 });
+  });
+
+  it('windy_forecast_point rejects null quals produced by unsupported CAST expressions', async () => {
+    const s = stubMethod('pointForecast', async () => ({
+      header: { model: 'ecmwf', refTime: 't' },
+      data: { ts: [1_700_000_000_000], temp: [290] },
+    }) as never);
+    restores.push(s.restore);
+
+    const { tables } = mountDripline();
+    const t = tables.get('windy_forecast_point')!;
+    await expect(drain(t.list!({
+      connection: { config: { uid: 'drip-cast-double' } },
+      quals: [
+        { column: 'lat', operator: '=', value: null },
+        { column: 'lon', operator: '=', value: null },
+        { column: 'model', operator: '=', value: 'ecmwf' },
+      ],
+    }))).rejects.toThrow(/lat.*CAST/);
+    expect(s.instances).toHaveLength(0);
   });
 
   it('windy_forecast_point lowercases the model qual before calling the client', async () => {

@@ -39,6 +39,7 @@ import {
   PACKAGE_VERSION,
   type ClientOptions,
   type PersistedSession,
+  loadSession,
 } from "@yosit/windy";
 
 type Ctx = { connection: { config: Record<string, unknown> } };
@@ -49,6 +50,13 @@ function str(v: unknown): string | undefined {
 }
 function num(v: unknown): number | undefined {
   return typeof v === "number" && Number.isFinite(v) ? v : undefined;
+}
+function requiredNum(input: Input, action: string, field: string, alias?: string): number {
+  const value = num(input[field]) ?? (alias ? num(input[alias]) : undefined);
+  if (value === undefined) {
+    throw new Error(`${action}: ${field} is required (decimal degrees; pass 0 for no bias)`);
+  }
+  return value;
 }
 function bool(v: unknown): boolean | undefined {
   return typeof v === "boolean" ? v : undefined;
@@ -77,13 +85,21 @@ function getClient(ctx: Ctx): WindyClient {
   const cached = clientCache.get(key);
   if (cached) return cached;
 
-  const session: PersistedSession = { uid };
-  if (token) session.token = token;
+  const session: PersistedSession = accountSid || token ? loadSession() : { uid };
+  if (session.accountSid && accountSid && session.accountSid !== accountSid) {
+    delete session.token;
+    delete session.tokenExp;
+    delete session.userId;
+    delete session.username;
+    delete session.subscription;
+  }
+  session.uid = uid;
   if (accountSid) session.accountSid = accountSid;
+  else delete session.accountSid;
+  if (token) session.token = token;
 
   const opts: ClientOptions = {
     session,
-    ephemeral: true,
     proxy,
     country,
     lang,
@@ -332,6 +348,8 @@ export default function windy(rl: RunlinePluginAPI) {
       query: { type: "string", required: true, description: "Free-text place name. Examples: `\"Tel Aviv\"`, `\"Eiffel Tower\"`, `\"LLBG\"` (matches airport codes too)." },
       biasLat: { type: "number", required: true, description: "Bias-point latitude, decimal degrees. Results closer to (biasLat, biasLon) rank higher. Pass `0` if you have no preference." },
       biasLon: { type: "number", required: true, description: "Bias-point longitude, decimal degrees. Pass `0` if you have no preference." },
+      lat: { type: "number", required: false, description: "Deprecated alias for biasLat." },
+      lon: { type: "number", required: false, description: "Deprecated alias for biasLon." },
       size: { type: "number", required: false, description: "Max results to return. Default 13. API range: min 10, max ~25 — values < 10 are clamped up.", default: 13 },
     },
     async execute(input: Input, ctx: Ctx) {
@@ -339,8 +357,8 @@ export default function windy(rl: RunlinePluginAPI) {
       return run(() =>
         c.search(
           String(input.query),
-          num(input.biasLat)!,
-          num(input.biasLon)!,
+          requiredNum(input, "search.places", "biasLat", "lat"),
+          requiredNum(input, "search.places", "biasLon", "lon"),
           num(input.size) ?? 13,
         ),
       );

@@ -725,22 +725,37 @@ export class WindyClient {
 
   // ── Webcam search & metrics ────────────────────────────────────────────
 
-  /** Webcam text search (admin.windy.com). Returns matches, optionally biased by lat/lon. */
+  /**
+   * Search webcams by resolving the query to a place, then filtering the
+   * public nearby-webcam response. The former admin endpoint is not a public
+   * route and returns 404.
+   */
   async webcamSearch(
     query: string,
     opts: { lat?: number; lon?: number } = {},
-  ): Promise<unknown> {
-    const qs: Record<string, string | number> = {
-      textQuery: query,
-      lang: this.lang,
-    };
-    if (opts.lat !== undefined) qs.lat = fmt(opts.lat);
-    if (opts.lon !== undefined) qs.lon = fmt(opts.lon);
-    return this.request('https://admin.windy.com/webcams/admin/v1.0/views', {
-      qs,
-      skipEnvelope: true,
-      auth: false,
+  ): Promise<WebcamList> {
+    let lat = opts.lat;
+    let lon = opts.lon;
+    if (lat === undefined || lon === undefined) {
+      const places = await this.search(query, 0, 0, 10);
+      const place = places.data?.find((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+      lat = place?.lat;
+      lon = place?.lon;
+    }
+    if (lat === undefined || lon === undefined) return { cams: [], total: 0 };
+
+    const nearby = await this.webcamsNear(lat, lon, { limit: 25, imageSize: 'preview' });
+    const needle = query.trim().toLowerCase();
+    const cams = nearby.cams.filter((cam) => {
+      const haystack = [
+        cam.title,
+        cam.location?.title,
+        cam.location?.city,
+        cam.location?.country,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return haystack.includes(needle);
     });
+    return { cams, total: cams.length };
   }
 
   /** Webcam health / ping metrics. */
@@ -1036,7 +1051,7 @@ export class WindyClient {
     pathOrUrl: string,
     options: RequestOptions = {},
   ): Promise<T> {
-    const auth = options.auth ?? true;
+    const auth = options.auth ?? requiresAuthentication(pathOrUrl);
     if (auth) await this.ensureAuth();
     return this.requestNoEnsure<T>(pathOrUrl, options);
   }
@@ -1197,7 +1212,16 @@ export class WindyAPIError extends Error {
   }
 }
 
+function requiresAuthentication(pathOrUrl: string): boolean {
+  return pathOrUrl.startsWith('/users/') ||
+    pathOrUrl === '/users/settings' ||
+    pathOrUrl.startsWith('/notif/v1/live-alerts/') ||
+    (pathOrUrl.startsWith('https://admin.windy.com/') &&
+      !pathOrUrl.endsWith('/webcams/admin/v1.0/views'));
+}
+
 function fmt(coord: number): string {
+  if (!Number.isFinite(coord)) throw new Error(`invalid coordinate: ${coord}`);
   // Windy expects 3 decimal places for the lat/lon path segments
   return coord.toFixed(3);
 }

@@ -22,3 +22,11 @@ Old package names `@yosit/windy-cli` and `@yosit/windy-skill` are not the migrat
 - Add the final smoke gate and publish workflow.
 - Remove remaining CLI-only source/dependencies and stale docs.
 - Validate live API checks with credentials; unit tests are not live verification.
+
+## Epic #23 findings
+
+- Authenticated Runline and Dripline clients load the shared persisted session, so a refreshed JWT is reused across calls and public reads do not trigger account bootstraps or the login throttle.
+- Dripline decodes scaled DECIMAL qual objects as `value / 10^scale`. Dripline core 0.9.16 discards DECIMAL scale before plugin dispatch, so quoted coordinate predicates remain the workaround until the core fix ships.
+- When Dripline core produces a null qual for `CAST(... AS DOUBLE)` coordinates, the adapter raises a clear unsupported-predicate error instead of silently yielding zero rows.
+- `webcams.search` uses public place resolution plus `webcams.near` and client-side filtering; the former `/webcams/admin/v1.0/views` route returns 404.
+- `search.places` validates `biasLat`/`biasLon`, accepts `lat`/`lon` aliases, and coordinate formatting rejects non-finite values without leaking `toFixed` errors.

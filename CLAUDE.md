@@ -4,7 +4,7 @@ This repository ships a shared Windy API client, Runline actions, a Dripline SQL
 
 ## Stack
 
-- Node.js >=16, TypeScript, pnpm
+- Bun, Node.js >=16-compatible output, TypeScript
 - `https` for API transport
 - Vitest for tests
 - Runline and Dripline are optional host SDK peers of their adapters
@@ -12,18 +12,18 @@ This repository ships a shared Windy API client, Runline actions, a Dripline SQL
 ## Commands
 
 ```bash
-pnpm install
-pnpm build
-pnpm lint
-pnpm test
+bun install
+bun run build
+bun run lint
+bun test
 ```
 
 Build the root client before adapter packages because their TypeScript path maps target the root declarations:
 
 ```bash
-pnpm build
-pnpm --filter @yosit/runline-plugin-windy build
-pnpm --filter @yosit/dripline-plugin-windy build
+bun run build
+bun run --filter @yosit/runline-plugin-windy build
+bun run --filter @yosit/dripline-plugin-windy build
 ```
 
 ## Package layout
@@ -73,4 +73,4 @@ Update `kb/windy-api-architecture.md`, `kb/windy-api-intent.md`, `kb/windy-data-
 
 ## Verification gate
 
-Before closing an issue, run root and adapter builds/lints plus `pnpm test`. Before release, also run packed-artifact and real-host smoke checks. A passing unit suite is not evidence of live API success.
+Before closing an issue, run root and adapter builds/lints plus `bun test`. Before release, also run packed-artifact and real-host smoke checks. A passing unit suite is not evidence of live API success.

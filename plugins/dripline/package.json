@@ -1,6 +1,6 @@
 {
   "name": "@yosit/dripline-plugin-windy",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "Dripline plugin exposing the windy.com API as SQL tables (forecasts, stations, alerts, storms, webcams, tides, geo, account).",
   "type": "module",
   "main": "dist/index.js",
@@ -30,7 +30,7 @@
     "node": ">=18"
   },
   "dependencies": {
-    "@yosit/windy": "workspace:*"
+    "@yosit/windy": "file:../.."
   },
   "peerDependencies": {
     "dripline": ">=0.3.0"

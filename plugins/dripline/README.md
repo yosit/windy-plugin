@@ -28,9 +28,9 @@ dripline connection add windy \
 ## Local build (for development)
 
 ```bash
-pnpm install
-pnpm build    # tsc → dist/
-pnpm lint     # tsc --noEmit
+bun install
+bun run build    # tsc → dist/
+bun run lint     # tsc --noEmit
 ```
 
 `dripline` is a peer dep. A local shim (`src/dripline-shim.d.ts`)
@@ -38,8 +38,17 @@ provides minimal types so this package type-checks before dripline is on
 the resolution path; the real types take over once it is.
 
 The TypeScript path mapping for `@yosit/windy` points at
-`../../dist/index.d.ts`, so build the parent (`pnpm build` at the repo
+`../../dist/index.d.ts`, so build the parent (`bun run build` at the repo
 root) before building the plugin.
+
+### Coordinate predicates
+
+Use quoted decimal coordinates in SQL, for example `lat = '56.642'` and
+`lon = '-4.88'`. Dripline versions before the DECIMAL qual fix can expose
+numeric literals as unscaled mantissas, and `CAST(... AS DOUBLE)` may arrive as
+an unavailable qual and fail clearly rather than silently returning zero rows.
+The adapter decodes scaled-decimal objects when the host provides them, but it
+cannot recover a scale already discarded by the Dripline core.
 
 ## Connection schema
 

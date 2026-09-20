@@ -21,7 +21,7 @@ cat >> ~/.npmrc <<'EOF'
 //npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 EOF
 export GITHUB_TOKEN=ghp_your_read_packages_token
-pnpm add @yosit/windy
+bun add @yosit/windy
 ```
 
 For a Vex workspace, install the standalone Runline and Dripline bundles from
@@ -65,6 +65,8 @@ LIMIT 12;
 
 Some hosts qualify tables with a connection name. Dripline is read-only and does not depend on Runline. Forecasts, soundings, observations and tides offer time-series rows; reference catalogs and metadata are also available.
 
+Prefer quoted decimal coordinates in Dripline predicates (`lat = '56.642'` and `lon = '-4.88'`). The adapter decodes scaled DECIMAL quals when the host provides them and reports unsupported `CAST(... AS DOUBLE)` quals instead of silently returning zero rows. Older Dripline cores may discard DECIMAL scale before plugins receive it.
+
 ## Credentials
 
 Windy uses browser OAuth. Configure credentials through the host connection manager:
@@ -97,10 +99,10 @@ Search and nearby APIs are bounded responses, not bulk exports. Do not assume a 
 ## Development
 
 ```bash
-pnpm install
-pnpm build
-pnpm lint
-pnpm test
+bun install
+bun run build
+bun run lint
+bun test
 ```
 
 During migration the source adapters remain in `plugins/`. Build the root client before their individual TypeScript builds. Tests currently import the built client deliberately so prototype stubs target the same class as the adapters.

@@ -43,6 +43,7 @@ import {
   type Level,
   type ClientOptions,
   type PersistedSession,
+  loadSession,
   type PointForecast,
   type SearchResponse,
   type ReverseGeocode,
@@ -103,7 +104,13 @@ function qVal(quals: Qual[], col: string): unknown {
   return quals.find((q) => q.column === col && q.operator === "=")?.value;
 }
 function qStr(q: Qual[], c: string): string | undefined { return str(qVal(q, c)); }
-function qNum(q: Qual[], c: string): number | undefined { return num(qVal(q, c)); }
+function qNum(q: Qual[], c: string): number | undefined {
+  const value = num(qVal(q, c));
+  if (/(^|_)(lat|lon)$/.test(c) && q.some((qual) => qual.column === c && qual.operator === "=") && value === undefined) {
+    throw new Error(`windy: ${c} equality predicate has no valid numeric value; this host may not support CAST predicates. Use quoted numeric coordinates.`);
+  }
+  return value;
+}
 function qBool(q: Qual[], c: string): boolean | undefined { return bool(qVal(q, c)); }
 
 // Lowercase model identifiers on the wire. The forecast `header.model` field
@@ -159,12 +166,20 @@ function getClient(ctx: QueryContext): WindyClient {
   const cached = clientCache.get(key);
   if (cached) return cached;
 
-  const session: PersistedSession = { uid };
-  if (token) session.token = token;
+  const session: PersistedSession = accountSid || token ? loadSession() : { uid };
+  if (session.accountSid && accountSid && session.accountSid !== accountSid) {
+    delete session.token;
+    delete session.tokenExp;
+    delete session.userId;
+    delete session.username;
+    delete session.subscription;
+  }
+  session.uid = uid;
   if (accountSid) session.accountSid = accountSid;
+  else delete session.accountSid;
+  if (token) session.token = token;
   const opts: ClientOptions = {
     session,
-    ephemeral: true,
     proxy,
     country,
     lang,
@@ -1762,14 +1777,18 @@ export default function windyPlugin(dl: DriplinePluginAPI): void {
       const lon = qNum(ctx.quals, "lon");
       try {
         const c = getClient(ctx);
-        const r = (await c.webcamSearch(q, { lat, lon })) as SearchResponse;
-        for (const x of r.data ?? []) {
+        const r: WebcamList = await c.webcamSearch(q, { lat, lon });
+        for (const x of r.cams ?? []) {
           yield {
             query: q,
-            id: x.id, lat: x.lat, lon: x.lon,
-            title: x.title, type: x.type,
-            cc: x.cc, country: x.country,
-            webcam_id: x.webcamId,
+            id: String(x.id),
+            lat: x.location?.lat,
+            lon: x.location?.lon,
+            title: x.title,
+            type: "webcam",
+            cc: undefined,
+            country: x.location?.country,
+            webcam_id: String(x.id),
           };
         }
       } catch (e) {

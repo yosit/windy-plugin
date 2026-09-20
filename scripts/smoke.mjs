@@ -13,12 +13,13 @@ if (![root.version, drip.version, runline.version].every((v) => v === root.versi
   throw new Error(`version drift: root=${root.version} dripline=${drip.version} runline=${runline.version}`);
 }
 console.log(`version lockstep: ${root.version}`);
+run('bun', ['run', 'link-workspace']);
 rmSync('dist', { recursive: true, force: true });
-run('pnpm', ['build']);
-run('pnpm', ['--filter', '@yosit/dripline-plugin-windy', 'build']);
-run('pnpm', ['--filter', '@yosit/runline-plugin-windy', 'build']);
-run('pnpm', ['bundle']);
-run('pnpm', ['test']);
+run('bun', ['run', 'build']);
+run('bun', ['run', '--filter', '@yosit/dripline-plugin-windy', 'build']);
+run('bun', ['run', '--filter', '@yosit/runline-plugin-windy', 'build']);
+run('bun', ['run', 'bundle']);
+run('bun', ['test']);
 
 const dripBundle = readFileSync('dist/vex/windy-dripline.js', 'utf8');
 const runBundle = readFileSync('dist/vex/windy-runline.js', 'utf8');
@@ -33,9 +34,9 @@ const workspace = mkdtempSync(join(tmpdir(), 'windy-smoke-'));
 try {
   run('node', ['dist/install.mjs', '--workspace', workspace]);
   run('node', ['dist/install.mjs', '--check', '--workspace', workspace]);
-  run('pnpm', ['pack', '--pack-destination', workspace]);
+  run('bun', ['pm', 'pack', '--destination', workspace]);
   const tarball = readdirSync(workspace).find((name) => name.endsWith('.tgz'));
-  if (!tarball) throw new Error('pnpm pack did not produce a tarball');
+  if (!tarball) throw new Error('bun pm pack did not produce a tarball');
   const packed = execFileSync('tar', ['-tf', join(workspace, tarball)], { encoding: 'utf8' });
   for (const required of ['package/dist/install.mjs', 'package/dist/vex/windy-dripline.js', 'package/dist/vex/windy-runline.js', 'package/skills/windy/SKILL.md']) {
     if (!packed.includes(required)) throw new Error(`packed artifact missing ${required}`);

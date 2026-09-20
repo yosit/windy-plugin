@@ -21,7 +21,7 @@ async function bytes(path) {
 
 async function installOne(source, target, check) {
   const expected = await bytes(source);
-  if (!expected) throw new Error(`missing build artifact: ${source}; run pnpm bundle first`);
+  if (!expected) throw new Error(`missing build artifact: ${source}; run bun run bundle first`);
   const actual = await bytes(target);
   if (actual && Buffer.compare(expected, actual) === 0) {
     console.log(`current ${target}`);
