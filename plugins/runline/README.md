@@ -5,7 +5,7 @@ A [runline](https://github.com/Michaelliv/runline) plugin that exposes the
 
 Built on top of [`@yosit/windy`](../../) — the plugin instantiates a
 `WindyClient` per call using config from `ctx.connection.config`, so it stays
-in lock-step with the CLI's auth handling and endpoint coverage.
+in lock-step with the shared client's auth handling and endpoint coverage.
 
 ## Install
 
@@ -13,14 +13,14 @@ Use runline's plugin installer pointed at this repo. The plugin lives in
 the `plugins/runline/` subdirectory:
 
 ```bash
-runline plugin install github:yosit/windy-cli#main:plugins/runline
+runline plugin install github:yosit/windy-plugin#main:plugins/runline
 ```
 
 Equivalent forms if your runline version prefers an explicit URL:
 
 ```bash
-runline plugin install https://github.com/yosit/windy-cli.git#main:plugins/runline
-runline plugin install git+https://github.com/yosit/windy-cli.git#path=plugins/runline
+runline plugin install https://github.com/yosit/windy-plugin.git#main:plugins/runline
+runline plugin install git+https://github.com/yosit/windy-plugin.git#path=plugins/runline
 ```
 
 After install, add a connection (all fields optional — public endpoints

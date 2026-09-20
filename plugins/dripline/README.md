@@ -6,14 +6,14 @@ DuckDB.
 
 Built on top of [`@yosit/windy`](../../) — every table instantiates a
 `WindyClient` per call using config from `ctx.connection.config`, so it
-stays in lock-step with the CLI's auth handling and endpoint coverage.
+stays in lock-step with the shared client's auth handling and endpoint coverage.
 
 ## Install
 
 ```bash
-dripline plugin install git:github.com/yosit/windy-cli#packages/plugins/dripline
+dripline plugin install git:github.com/yosit/windy-plugin#plugins/dripline
 # or, since this plugin lives in a subdirectory:
-dripline plugin install git+https://github.com/yosit/windy-cli.git#path=plugins/dripline
+dripline plugin install git+https://github.com/yosit/windy-plugin.git#path=plugins/dripline
 ```
 
 Then add a connection (all fields optional — public endpoints work

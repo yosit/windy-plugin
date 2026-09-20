@@ -2,7 +2,7 @@
 
 ## Target
 
-One `@yosit/windy` package containing the shared client, Runline adapter, Dripline adapter, and `skills/windy/SKILL.md`. The repository URL remains `yosit/windy-cli` for continuity. The CLI source is being removed and is no longer published as a bin.
+One `@yosit/windy` package containing the shared client, Runline adapter, Dripline adapter, and `skills/windy/SKILL.md`. The CLI source is removed and is no longer published as a bin.
 
 ## Capability boundary
 

@@ -4,7 +4,7 @@ Runline actions, Dripline SQL tables, and an agent skill for [windy.com](https:/
 
 ## Package and migration
 
-The migration target is one package, `@yosit/windy`, with client, `runline`, and `dripline` entry points and `skills/windy/SKILL.md`. The repository name remains `yosit/windy-cli` for URL continuity. New package publishing is a separate release step.
+The migration target is one package, `@yosit/windy`, with client, `runline`, and `dripline` entry points and `skills/windy/SKILL.md`. New package publishing is a separate release step.
 
 Replace old `@yosit/windy-skill` or `@yosit/windy-cli` imports with `@yosit/windy`. The former `windy` and `windy-skill` commands are removed. Existing login/refresh cron jobs must be replaced with host connection credentials and automatic session refresh. Do not copy JWTs into shell history.
 
