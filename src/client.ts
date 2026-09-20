@@ -62,6 +62,7 @@ import {
   loadSession,
   recordLoginAttempt,
   saveSession,
+  isSessionReusable,
   tokenIsStale,
   type PersistedSession,
 } from './session';
@@ -203,8 +204,37 @@ export class WindyClient {
     return info;
   }
 
-  /** Returns current user info / subscription. */
+  /** Returns current user info / subscription, reusing a valid persisted session. */
   async whoami(): Promise<AccountInfo> {
+    if (isSessionReusable(this.session) && this.session.userId !== undefined && this.session.username && this.session.subscription) {
+      return {
+        message: 'cached session',
+        auth: true,
+        token: this.session.token!,
+        userInfo: {
+          avatar: '',
+          email: '',
+          username: this.session.username,
+          userslug: this.session.username,
+          verifiedEmail: '',
+          joindate: 0,
+          fullname: '',
+          id: this.session.userId,
+          requiresCookieConsent: false,
+          auth: true,
+        },
+        subscription: this.session.subscription,
+        subscriptionInfo: {
+          tier: this.session.subscription,
+          status: 'active',
+          state: 'cached',
+          platform: 'unknown',
+          expiresAt: this.session.tokenExp! * 1000,
+          isSubscription: this.session.subscription !== 'free',
+          isTrial: false,
+        },
+      };
+    }
     return this.refreshAuth();
   }
 

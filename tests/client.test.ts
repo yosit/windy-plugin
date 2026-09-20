@@ -33,6 +33,46 @@ describe('WindyClient', () => {
     refresh.mockRestore();
   });
 
+  it('whoami reuses a valid persisted session without bootstrapping', async () => {
+    const c = new WindyClient({
+      session: {
+        uid: 'whoami-cached',
+        accountSid: 'sid',
+        token: 'cached-token',
+        tokenExp: Math.floor(Date.now() / 1000) + 3600,
+        userId: 123,
+        username: 'cached-user',
+        subscription: 'premium',
+      },
+      ephemeral: true,
+    });
+    const refresh = vi.spyOn(c, 'refreshAuth');
+    await expect(c.whoami()).resolves.toMatchObject({
+      auth: true,
+      userInfo: { id: 123, username: 'cached-user' },
+      subscription: 'premium',
+    });
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('whoami bootstraps when the persisted token is stale', async () => {
+    const c = new WindyClient({
+      session: {
+        uid: 'whoami-stale',
+        accountSid: 'sid',
+        token: 'stale-token',
+        tokenExp: 1,
+        userId: 123,
+        username: 'stale-user',
+        subscription: 'premium',
+      },
+      ephemeral: true,
+    });
+    const refresh = vi.spyOn(c, 'refreshAuth').mockResolvedValue({} as never);
+    await c.whoami();
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
   it('decodeToken returns null when no token is stored', () => {
     const c = new WindyClient({ session: { uid: 'test-uid' }, ephemeral: true });
     expect(c.decodeToken()).toBeNull();
