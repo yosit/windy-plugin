@@ -74,6 +74,19 @@ function num(v: unknown): number | undefined {
     const n = Number(v);
     if (Number.isFinite(n)) return n;
   }
+  // DuckDB may pass DECIMAL quals as an unscaled value plus its scale. Do not
+  // coerce the object directly: Number({ value: 566420n, scale: 4 }) is NaN,
+  // while Number(566420n) silently produces the wrong coordinate.
+  if (v !== null && typeof v === "object") {
+    const d = v as { value?: unknown; scale?: unknown };
+    const raw = d.value;
+    const scale = typeof d.scale === "number" ? d.scale : Number(d.scale);
+    if ((typeof raw === "bigint" || typeof raw === "number" || typeof raw === "string") &&
+        Number.isInteger(scale) && scale >= 0) {
+      const n = Number(raw) / 10 ** scale;
+      if (Number.isFinite(n)) return n;
+    }
+  }
   return undefined;
 }
 function bool(v: unknown): boolean | undefined {

@@ -250,6 +250,26 @@ describe('dripline forecast tables normalize model casing (#9)', () => {
     expect(rows[0].model).toBe('ecmwf');
   });
 
+  it('windy_forecast_point restores DuckDB DECIMAL quals before calling the client', async () => {
+    let received: { lat?: number; lon?: number } = {};
+    const s = stubMethod('pointForecast', async function (this: WindyClient, ...args: unknown[]) {
+      received = { lat: args[0] as number, lon: args[1] as number };
+      return { header: { model: 'ecmwf', refTime: 't' }, data: { ts: [] } } as never;
+    });
+    restores.push(s.restore);
+
+    const { tables } = mountDripline();
+    const t = tables.get('windy_forecast_point')!;
+    await drain(t.list!({
+      connection: { config: { uid: 'drip-decimal' } },
+      quals: [
+        { column: 'lat', operator: '=', value: { value: 566420n, scale: 4 } },
+        { column: 'lon', operator: '=', value: { value: -48800n, scale: 4 } },
+      ],
+    }));
+    expect(received).toEqual({ lat: 56.642, lon: -4.88 });
+  });
+
   it('windy_forecast_point lowercases the model qual before calling the client', async () => {
     let receivedOpts: Record<string, unknown> | undefined;
     const s = stubMethod('pointForecast', async function (this: WindyClient, ..._args: unknown[]) {
