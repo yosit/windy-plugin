@@ -10,6 +10,33 @@ Replace old `@yosit/windy-skill` or `@yosit/windy-cli` imports with `@yosit/wind
 
 See [migration status and capability boundaries](kb/migration.md). Historical changelog entries describe earlier releases, not the current API.
 
+## Install for an agent workspace
+
+The package is published privately to GitHub Packages. Configure the registry
+once, then install the shared package:
+
+```bash
+cat >> ~/.npmrc <<'EOF'
+@yosit:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
+EOF
+export GITHUB_TOKEN=ghp_your_read_packages_token
+pnpm add @yosit/windy
+```
+
+For a Vex workspace, install the standalone Runline and Dripline bundles from
+the package into the workspace:
+
+```bash
+node node_modules/@yosit/windy/dist/install.mjs --workspace /path/to/vex-workspace
+node node_modules/@yosit/windy/dist/install.mjs --check --workspace /path/to/vex-workspace
+```
+
+This creates `.runline/plugins/windy/index.js` and `.dripline/windy.js`.
+Configure the host connection with `accountSid` (the Windy `_account_sid`
+cookie) for authenticated actions and automatic JWT refresh; a `token` alone
+is short-lived and cannot refresh.
+
 ## Use through Runline
 
 After loading the Runline adapter and configuring a Windy connection:
