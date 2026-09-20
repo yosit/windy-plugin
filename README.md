@@ -33,9 +33,10 @@ node node_modules/@yosit/windy/dist/install.mjs --check --workspace /path/to/vex
 ```
 
 This creates `.runline/plugins/windy/index.js` and `.dripline/windy.js`.
-Configure the host connection with `accountSid` (the Windy `_account_sid`
-cookie) for authenticated actions and automatic JWT refresh; a `token` alone
-is short-lived and cannot refresh.
+For authenticated actions, configure only `accountSid`: the Windy
+`_account_sid` cookie. It is the durable credential and enables automatic JWT
+refresh. A `token` alone is short-lived and cannot refresh; `proxy` is optional
+and only for networks that require or inspect outbound traffic.
 
 ## Use through Runline
 
@@ -70,9 +71,9 @@ Windy uses browser OAuth. Configure credentials through the host connection mana
 
 | Connection field | Optional environment mapping | Purpose |
 | --- | --- | --- |
-| `accountSid` | `WINDY_ACCOUNT_SID` | Authorized browser's `_account_sid` cookie; durable JWT refresh credential |
-| `token` | `WINDY_TOKEN` | Pre-issued JWT; approximately 48 hours, cannot refresh without cookie |
-| `proxy` | `WINDY_PROXY` | Explicit debugging proxy; ambient `HTTPS_PROXY` is ignored |
+| `accountSid` | `WINDY_ACCOUNT_SID` | **Recommended and normally sufficient:** authorized browser's `_account_sid` cookie; durable JWT refresh credential |
+| `token` | `WINDY_TOKEN` | Optional fallback: pre-issued JWT, approximately 48 hours; cannot refresh without cookie |
+| `proxy` | `WINDY_PROXY` | Optional debugging/network proxy; ambient `HTTPS_PROXY` is ignored |
 
 Public weather endpoints can be called anonymously; account operations require credentials. The separate commercial forecast API requires its own API key. Never log secrets. The legacy library session path remains `~/.config/windy-cli/session.json` for compatibility; do not confuse that with plugin connection storage.
 
